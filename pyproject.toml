@@ -1,0 +1,26 @@
+[project]
+name = "applimiter"
+version = "0.1.0"
+description = "Daily usage limiter/tracker for apps and websites with productivity nudges"
+requires-python = ">=3.10"
+dependencies = [
+    "psutil>=5.9",
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+applimiter = "applimiter.cli:main"
+applimiter-daemon = "applimiter.daemon:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["applimiter", "applimiter.data"]
+
+[tool.setuptools.package-data]
+"applimiter.data" = ["*.service"]

@@ -1,0 +1,12 @@
+[Unit]
+Description=applimiter usage limiter daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/applimiter-daemon
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

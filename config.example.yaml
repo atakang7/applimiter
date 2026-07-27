@@ -1,0 +1,98 @@
+# applimiter configuration
+# poll_interval: how often (seconds) the daemon samples what's active
+poll_interval: 5
+
+# Where the daemon writes logs/db/pid — usually leave as-is
+state_dir: ~/.local/share/applimiter
+
+rules:
+  # --- Native applications, matched by process name (see `ps -eo comm`) ---
+  - name: steam
+    type: process
+    match: steam
+    category: fun
+    daily_limit_minutes: 60
+    enforcement: hard        # hard = kill the process once limit is hit
+    warn_at_minutes: [45, 55]
+
+  - name: discord
+    type: process
+    match: Discord
+    category: fun
+    daily_limit_minutes: 90
+    enforcement: soft         # soft = notify only, never kill
+    warn_at_minutes: [60, 80]
+
+  # --- Websites, matched by keyword(s) found in the Chrome window title ---
+  - name: youtube
+    type: chrome_title
+    match: ["youtube"]
+    category: fun
+
+  - name: reddit
+    type: chrome_title
+    match: ["reddit"]
+    category: fun
+    daily_limit_minutes: 20
+    enforcement: soft
+    warn_at_minutes: [15]
+
+  - name: x-twitter
+    # X.com's tab title is often just "Home / X" (no "x.com"/"twitter" text),
+    # so match on both the brand name and the "/ x" suffix pattern.
+    type: chrome_title
+    match: ["twitter", "x.com", " / x"]
+    category: fun
+    daily_limit_minutes: 30
+    enforcement: soft
+    warn_at_minutes: [20, 27]
+
+  - name: kick
+    type: chrome_title
+    match: ["kick.com", "kick -"]
+    category: fun
+    # Always blocked (tab auto-closed) until this time of day, every day —
+    # independent of daily_limit_minutes, which this rule doesn't use.
+    blocked_before: "17:00"
+
+  - name: linkedin
+    type: chrome_title
+    match: ["linkedin"]
+    category: fun
+    daily_limit_minutes: 10
+    enforcement: hard
+    warn_at_minutes: [7, 9]
+
+  # --- Productive apps (no limit needed, just tracked for the daily report) ---
+  - name: chatgpt
+    type: chrome_title
+    match: ["chatgpt"]
+    category: productive
+
+  - name: claude
+    type: chrome_title
+    match: ["claude"]
+    category: productive
+
+  - name: gemini
+    type: chrome_title
+    match: ["gemini"]
+    category: productive
+
+  - name: code-editor
+    type: process
+    match: code
+    category: productive
+
+  - name: terminal
+    type: process
+    match: gnome-terminal-server
+    category: productive
+
+# Daily productivity nudge: when total "fun" time crosses these
+# thresholds (minutes), send a notification with a stats summary.
+productivity_nudges:
+  - minutes: 30
+    message: "You've spent {fun_minutes}m on fun stuff today. Maybe it's time to start working?"
+  - minutes: 60
+    message: "{fun_minutes}m of fun today vs {productive_minutes}m productive. Consider calling it a day on distractions."
