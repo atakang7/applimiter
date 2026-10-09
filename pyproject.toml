@@ -1,7 +1,8 @@
 [project]
 name = "applimiter"
 version = "0.1.0"
-description = "Daily usage limiter/tracker for apps and websites with productivity nudges"
+description = "X11 foreground usage tracker with per-app and tab limits"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "psutil>=5.9",
@@ -24,3 +25,6 @@ packages = ["applimiter", "applimiter.data"]
 
 [tool.setuptools.package-data]
 "applimiter.data" = ["*.service"]
+
+[project.urls]
+Repository = "https://github.com/atakang7/applimiter"
