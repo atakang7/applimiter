@@ -13,7 +13,12 @@ log = logging.getLogger("applimiter")
 
 def _terminate_focused_process(match_name: str, sample: Sample) -> None:
     """Terminate exactly the focused, same-user process, never every match."""
-    if not sample.active_pid or sample.active_process_name != match_name:
+    if not sample.active_pid or not sample.window_id or sample.active_process_name != match_name:
+        return
+    from . import tracker
+    _wm_class, _title, current_pid, window_id = tracker.get_active_window()
+    if current_pid != sample.active_pid or window_id != sample.window_id:
+        log.info("skipping process termination: focus changed")
         return
     try:
         proc = psutil.Process(sample.active_pid)
