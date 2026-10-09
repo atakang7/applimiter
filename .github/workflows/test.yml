@@ -15,7 +15,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.12", "3.13"]
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,9 +23,50 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install -e ".[dev]"
-      - name: Test
-        run: python -m pytest -q
-      - name: CLI smoke test
+      - name: Test core, CLI, safety and SQLite integration
+        run: python -m pytest -q tests --ignore=tests/test_x11_e2e.py
+      - name: CLI smoke
         run: |
           applimiter --help
           applimiter --config config.example.yaml config validate
+
+  desktop-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install X11 test environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xterm openbox xdotool x11-utils
+          python -m pip install -e ".[dev]"
+      - name: Verify real X11 focus and process termination
+        run: |
+          xvfb-run -a -s "-screen 0 1280x800x24" bash -euo pipefail -c '
+            openbox >/tmp/applimiter-openbox.log 2>&1 &
+            wm=$!
+            trap "kill $wm 2>/dev/null || true" EXIT
+            sleep 2
+            python -m pytest -q tests/test_x11_e2e.py
+          '
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build distribution
+        run: |
+          python -m pip install build
+          python -m build --wheel
+      - name: Install wheel in clean virtualenv
+        run: |
+          python -m venv /tmp/applimiter-wheel
+          /tmp/applimiter-wheel/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/applimiter-wheel/bin/applimiter --help
+          /tmp/applimiter-wheel/bin/applimiter --config "$GITHUB_WORKSPACE/config.example.yaml" config validate
