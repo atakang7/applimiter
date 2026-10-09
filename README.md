@@ -1,80 +1,84 @@
 # applimiter
 
-**A tiny daemon that puts a leash on your screen time.**
+Local Linux **X11** foreground-usage tracker with per-application and per-tab time limits. Usage stays in SQLite on your machine; no account or telemetry service.
 
-Give any app or website a daily time budget. Get warned as you close in
-on it. Get blocked once you're over. See exactly how your day split
-between fun and productive time — no browser extension, no account, no
-bloat. Just a daemon, a YAML file, and a CLI.
+## Requirements
 
-```
-$ applimiter stats
+- Linux desktop running X11, not Wayland
+- Python 3.10+, a user systemd instance
+- `xdotool`, `xprop` (`x11-utils`), and optionally `notify-send` (`libnotify-bin`)
+- Native-app windows must expose `_NET_WM_PID` so the daemon can identify the **specific focused process**
 
-applimiter — usage for 2026-07-27
-
-  code-editor      [productive]     185m  ########################
-  terminal         [productive]     170m  ######################--
-  youtube          [fun       ]      45m  ######------------------
-  linkedin         [fun       ]      10m / 10m limit  #-----------------------
-
-  Fun time:        55m
-  Productive time: 355m
-  Fun share:       13%
-```
-
-## Install
-
-```bash
-sudo apt install xdotool wmctrl libnotify-bin
-pip install --user -e .
-
+```sh
+sudo apt install xdotool x11-utils libnotify-bin
+python3 -m venv ~/.local/share/applimiter/venv
+~/.local/share/applimiter/venv/bin/pip install .
 mkdir -p ~/.config/applimiter
-cp config.example.yaml ~/.config/applimiter/config.yaml   # edit to taste
-
-applimiter enable   # installs the systemd service, starts it, runs at login
+cp config.example.yaml ~/.config/applimiter/config.yaml
+~/.local/share/applimiter/venv/bin/applimiter config validate
+~/.local/share/applimiter/venv/bin/applimiter enable
 ```
 
-## Commands
+`enable` writes a **user** systemd unit using the current Python executable; it doesn't need root. Run it from the environment you want the daemon to use. Edit `~/.config/applimiter/config.yaml` to set your own rules.
 
-| Command | Does |
-|---|---|
-| `applimiter stats` | Today's usage report |
-| `applimiter status` | Daemon/service state |
-| `applimiter start` / `stop` / `restart` | Control the running daemon |
-| `applimiter enable` / `disable` | Install/remove the systemd service |
-| `applimiter logs [-f] [-n N]` | Tail the daemon log |
-| `applimiter config validate` / `edit` | Check, or edit + auto-validate, `config.yaml` |
+## Usage
 
-## One rule, fully explained
+```text
+applimiter stats                  Current day: per-rule and fun/productive totals
+applimiter stats --date 2026-10-09
+applimiter status                 Service and daemon state
+applimiter start|stop|restart
+applimiter enable|disable         Install/enable or disable user systemd unit
+applimiter config validate|edit
+applimiter logs -n 100 [-f]
+```
+
+For another config file, pass `--config PATH` **before** the command. The user service always reads the default config path.
+
+## Rules
 
 ```yaml
-- name: linkedin
-  type: chrome_title           # "process" for a native app, "chrome_title" for a site
-  match: ["linkedin"]           # process name, or a list of title keywords
-  category: fun                  # feeds the fun/productive split in `stats`
-  daily_limit_minutes: 10        # omit for unlimited — just tracked
-  enforcement: hard               # "soft" notifies only, "hard" blocks
-  warn_at_minutes: [7, 9]
-  blocked_before: "17:00"         # optional: always blocked until this time, every day
+poll_interval: 5
+rules:
+  - name: youtube
+    type: chrome_title
+    match: ["youtube"]
+    category: fun
+    daily_limit_minutes: 30
+    enforcement: soft
+    warn_at_minutes: [20, 27]
+
+  - name: steam
+    type: process
+    match: steam
+    category: fun
+    daily_limit_minutes: 60
+    enforcement: soft
+    blocked_before: "09:00"
+
+  - name: editor
+    type: process
+    match: code
+    category: productive
 ```
 
-More rules: [config.example.yaml](config.example.yaml).
+- `process`: exact **focused window owner** process name, not every running process.
+- `chrome_title`: substring in the active Chrome/Chromium window title. It cannot verify URLs; false-positive titles are possible. The active tab only is tracked.
+- `soft`: warn without enforcing the daily limit. `hard`: send `SIGTERM` to **only the verified focused process** or `Ctrl+W` to the verified Chrome tab. **Unsaved work can be lost.**
+- `blocked_before`: unconditional hard block before the local cutoff even if `enforcement: soft`. Avoid combining it with important native applications.
+- Tracking counts elapsed foreground polling time; suspended/offline intervals are not counted. Sampling is approximate, not an exact stopwatch.
 
-## How it works
+Other examples and productivity nudges: [config.example.yaml](config.example.yaml).
 
-Apps are matched by process name. Websites are matched by keyword against
-the focused Chrome window's title (via `xdotool`/`xprop`) — no extension
-required, but it only sees the active tab and matches on title text, not
-exact URL. A "hard" block on a website closes just that tab (`ctrl+w`);
-on an app, it kills the process.
+## Runtime and verification
 
-## Development
+State defaults to `~/.local/share/applimiter`: `usage.db`, `applimiter.log`, and a singleton `applimiter.pid`. Records and one-time warnings reset by local calendar date. You can inspect them using `applimiter stats`.
 
-```bash
-pip install --user -e ".[dev]"
-pytest
+```sh
+python -m pip install -e ".[dev]"
+python -m pytest -q tests --ignore=tests/test_x11_e2e.py
 ```
 
----
+CI also runs an **actual X11/Xvfb** test with two same-name xterm windows, asserting a focus change prevents termination and only the targeted window exits. A clean wheel-install smoke test checks the packaged entrypoint. On Wayland, without an X11 active window, enforcement deliberately fails closed rather than guessing a process to kill.
 
-MIT licensed — see [LICENSE](LICENSE).
+MIT — [LICENSE](LICENSE).
