@@ -21,6 +21,7 @@ def focus(window):
     subprocess.run(["xdotool", "windowactivate", "--sync", window], check=True, timeout=5)
 
 
+@pytest.mark.skipif(not os.environ.get('DISPLAY'), reason='requires real X11 session')
 def test_real_focused_xterm_is_only_target():
     assert os.environ.get("DISPLAY"), "test needs Xvfb and a window manager"
     first = subprocess.Popen(["xterm", "-T", "APPLIMITER_FOCUSED", "-e", "sleep", "35"])
