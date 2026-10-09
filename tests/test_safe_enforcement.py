@@ -2,7 +2,6 @@
 import os
 import subprocess
 import sys
-import time
 from unittest.mock import Mock
 
 import psutil
@@ -14,21 +13,24 @@ from applimiter.matchers import Sample
 from applimiter.storage import Storage
 
 
-def test_foreground_process_identity_and_same_user_enforced():
+def test_foreground_process_identity_and_same_user_enforced(monkeypatch):
     first = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(25)"])
     second = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(25)"])
     try:
         first_proc = psutil.Process(first.pid)
+        monkeypatch.setattr(tracker, 'get_active_window', lambda: ('xterm', 'Test', first.pid, '321'))
         sample = Sample(
             active_process_name=first_proc.name(),
             active_pid=first.pid,
             active_create_time=first_proc.create_time(),
+            window_id='321',
         )
         rule = {"type": "process", "match": first_proc.name()}
         # A reused PID or a mismatched title MUST NOT be terminated.
         actions.block(rule, Sample(
             active_process_name=first_proc.name(), active_pid=first.pid,
             active_create_time=first_proc.create_time() - 100,
+            window_id='321',
         ))
         assert first.poll() is None
         actions.block(rule, sample)
@@ -113,7 +115,7 @@ def test_daemon_tick_meters_only_elapsed_focused_time(tmp_path, monkeypatch):
     monkeypatch.setattr(actions, "block", Mock())
     tick_start = daemon._last_tick
     clock = iter([tick_start + 5.7, tick_start + 105.7])
-    monkeypatch.setattr("applimiter.daemon.time.monotonic", lambda: next(clock))
+    monkeypatch.setattr(daemon, "_now", lambda: next(clock))
     try:
         daemon._tick()
         assert daemon.store.get_seconds("editor") == 5
@@ -148,3 +150,20 @@ def test_category_change_is_reflected_in_usage(tmp_path):
         assert store.get_all_usage() == [("editor", "productive", 12)]
     finally:
         store.close()
+
+
+def test_process_focus_change_blocks_termination(monkeypatch):
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(25)"])
+    try:
+        subject = psutil.Process(proc.pid)
+        sample = Sample(
+            active_process_name=subject.name(), active_pid=proc.pid,
+            active_create_time=subject.create_time(), window_id="321",
+        )
+        monkeypatch.setattr(tracker, "get_active_window", lambda: ("xterm", "Other", proc.pid, "999"))
+        actions.block({"type": "process", "match": subject.name()}, sample)
+        assert proc.poll() is None
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=7)
