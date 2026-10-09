@@ -59,7 +59,7 @@ class Storage:
             """
             INSERT INTO usage (date, rule_name, category, seconds)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(date, rule_name) DO UPDATE SET seconds = seconds + excluded.seconds
+            ON CONFLICT(date, rule_name) DO UPDATE SET seconds = seconds + excluded.seconds,\n                category = excluded.category
             """,
             (d, rule_name, category, seconds),
         )
@@ -118,3 +118,6 @@ class Storage:
             "INSERT OR IGNORE INTO nudged (date, minute_mark) VALUES (?, ?)", (d, minute_mark)
         )
         self.conn.commit()
+
+    def close(self) -> None:
+        self.conn.close()

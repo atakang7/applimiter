@@ -1,6 +1,7 @@
 import importlib.resources
 import os
 import subprocess
+import sys
 
 SERVICE_NAME = "applimiter.service"
 UNIT_DEST = os.path.expanduser(f"~/.config/systemd/user/{SERVICE_NAME}")
@@ -32,6 +33,9 @@ def install_unit() -> None:
     os.makedirs(os.path.dirname(UNIT_DEST), exist_ok=True)
 
     unit_text = importlib.resources.files("applimiter.data").joinpath("applimiter.service").read_text()
+    # systemd unit executable quoting (not shell quoting). Escape % specifiers.
+    executable = sys.executable.replace("%", "%%").replace("\\", "\\\\").replace('"', '\\"')
+    unit_text = unit_text.replace("@PYTHON_EXEC@", f'"{executable}"')
     with open(UNIT_DEST, "w") as f:
         f.write(unit_text)
 
@@ -39,8 +43,7 @@ def install_unit() -> None:
 
 
 def enable() -> None:
-    if not is_installed():
-        install_unit()
+    install_unit()
     _systemctl("enable", "--now", SERVICE_NAME)
 
 

@@ -15,7 +15,7 @@ def store(tmp_path):
 def recorder(monkeypatch):
     """Replaces actions.block and notify.send with recorders instead of hitting the OS."""
     calls = {"blocks": [], "notifications": []}
-    monkeypatch.setattr(policy.actions, "block", lambda rule: calls["blocks"].append(rule["name"]))
+    monkeypatch.setattr(policy.actions, "block", lambda rule, sample=None: calls["blocks"].append(rule["name"]))
     monkeypatch.setattr(
         policy.notify, "send", lambda title, body, urgency="normal": calls["notifications"].append(title)
     )

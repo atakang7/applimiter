@@ -1,10 +1,10 @@
 [Unit]
-Description=applimiter usage limiter daemon
+Description=AppLimiter foreground-usage daemon
 After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/applimiter-daemon
+ExecStart=@PYTHON_EXEC@ -m applimiter.daemon
 Restart=on-failure
 RestartSec=5
 

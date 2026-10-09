@@ -1,5 +1,6 @@
 import os
 import re
+from string import Formatter
 from typing import Optional
 
 import yaml
@@ -41,7 +42,7 @@ def _validate_rule(rule: Rule, index: int) -> None:
         raise ConfigError(f"{where}: name must be a non-empty string")
     if "type" not in rule:
         raise ConfigError(f"{where}: missing required field 'type'")
-    if rule["type"] not in KNOWN_RULE_TYPES:
+    if not isinstance(rule["type"], str) or rule["type"] not in KNOWN_RULE_TYPES:
         raise ConfigError(f"{where}: unknown type '{rule['type']}', expected one of {sorted(KNOWN_RULE_TYPES)}")
     if "match" not in rule:
         raise ConfigError(f"{where}: missing required field 'match'")
@@ -53,7 +54,9 @@ def _validate_rule(rule: Rule, index: int) -> None:
                 or any(not isinstance(value, str) or not value.strip() for value in rule["match"])):
             raise ConfigError(f"{where}: 'match' for type 'chrome_title' must be a non-empty list of strings")
 
-    if rule["enforcement"] not in KNOWN_ENFORCEMENTS:
+    if not isinstance(rule["category"], str) or not rule["category"].strip():
+        raise ConfigError(f"{where}: category must be a non-empty string")
+    if not isinstance(rule["enforcement"], str) or rule["enforcement"] not in KNOWN_ENFORCEMENTS:
         raise ConfigError(f"{where}: unknown enforcement '{rule['enforcement']}', expected one of {sorted(KNOWN_ENFORCEMENTS)}")
 
     limit = rule["daily_limit_minutes"]
@@ -72,8 +75,11 @@ def _validate_rule(rule: Rule, index: int) -> None:
 def load_config(path: Optional[str] = None) -> Config:
     config_path = _find_config_path(path)
 
-    with open(config_path) as f:
-        raw = yaml.safe_load(f)
+    try:
+        with open(config_path) as f:
+            raw = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{config_path}: invalid YAML: {exc}") from exc
 
     if not isinstance(raw, dict) or not isinstance(raw.get("rules"), list):
         raise ConfigError(f"{config_path}: config must define a top-level 'rules' list")
@@ -106,6 +112,29 @@ def load_config(path: Optional[str] = None) -> Config:
             raise ConfigError(f"rules[{i}]: duplicate rule name '{rule['name']}'")
         names_seen.add(rule["name"])
 
-    raw.setdefault("productivity_nudges", [])
+    nudges = raw.setdefault("productivity_nudges", [])
+    if not isinstance(nudges, list):
+        raise ConfigError("productivity_nudges must be a list")
+    seen_marks = set()
+    for index, nudge in enumerate(nudges):
+        where = f"productivity_nudges[{index}]"
+        if not isinstance(nudge, dict):
+            raise ConfigError(f"{where}: expected a mapping")
+        mark = nudge.get("minutes")
+        if type(mark) is not int or mark <= 0:
+            raise ConfigError(f"{where}: minutes must be a positive integer")
+        if mark in seen_marks:
+            raise ConfigError(f"{where}: duplicate minutes threshold {mark}")
+        seen_marks.add(mark)
+        message = nudge.get("message")
+        if not isinstance(message, str) or not message.strip():
+            raise ConfigError(f"{where}: message must be a non-empty string")
+        try:
+            fields = list(Formatter().parse(message))
+        except ValueError as exc:
+            raise ConfigError(f"{where}: invalid message format: {exc}") from exc
+        if any(field not in (None, "fun_minutes", "productive_minutes")
+               or spec or conversion for _literal, field, spec, conversion in fields):
+            raise ConfigError(f"{where}: only {{fun_minutes}} and {{productive_minutes}} placeholders are supported")
 
     return raw
