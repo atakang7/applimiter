@@ -20,7 +20,7 @@ class Daemon:
         self.poll_interval = self.cfg["poll_interval"]
         self.pid_file = os.path.join(self.cfg["state_dir"], "applimiter.pid")
         self.running = True
-        self._last_tick = time.monotonic()
+        self._last_tick = self._now()
         self._lock_fd: Optional[int] = None
 
         logging.basicConfig(
@@ -77,8 +77,11 @@ class Daemon:
             os.close(self._lock_fd)
             self._lock_fd = None
 
+    def _now(self) -> float:
+        return time.monotonic()
+
     def _tick(self) -> None:
-        now = time.monotonic()
+        now = self._now()
         # Do not charge time before the first observation, nor charge an entire
         # laptop-suspend interval. Actual elapsed time is used within each poll.
         elapsed = max(0, min(self.poll_interval, int(now - self._last_tick)))
