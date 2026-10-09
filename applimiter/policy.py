@@ -2,6 +2,7 @@ import datetime
 from typing import List, Optional
 
 from . import actions, notify
+from .matchers import Sample
 from .storage import Storage, WarnKind
 from .types import ProductivityNudge, Rule
 
@@ -18,7 +19,7 @@ def is_time_locked(rule: Rule, now: Optional[datetime.datetime] = None) -> bool:
     return now_time < cutoff
 
 
-def apply_time_lock(rule: Rule, store: Storage) -> bool:
+def apply_time_lock(rule: Rule, store: Storage, sample: Optional[Sample] = None) -> bool:
     if not is_time_locked(rule):
         return False
 
@@ -29,12 +30,12 @@ def apply_time_lock(rule: Rule, store: Storage) -> bool:
         store.mark_warned(rule["name"], WarnKind.TIME_LOCKED)
         notify.time_locked(rule, blocked_before)
 
-    actions.block(rule)
+    actions.block(rule, sample)
 
     return True
 
 
-def apply_usage_limit(rule: Rule, store: Storage) -> None:
+def apply_usage_limit(rule: Rule, store: Storage, sample: Optional[Sample] = None) -> None:
     limit = rule.get("daily_limit_minutes")
 
     if limit is None:
@@ -55,7 +56,7 @@ def apply_usage_limit(rule: Rule, store: Storage) -> None:
         notify.limit_hit(rule)
 
     if rule["enforcement"] == "hard":
-        actions.block(rule)
+        actions.block(rule, sample)
 
 
 def apply_productivity_nudges(nudges: List[ProductivityNudge], store: Storage) -> None:
