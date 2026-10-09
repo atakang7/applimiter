@@ -1,3 +1,4 @@
+import fcntl
 import logging
 import os
 import signal
@@ -19,6 +20,8 @@ class Daemon:
         self.poll_interval = self.cfg["poll_interval"]
         self.pid_file = os.path.join(self.cfg["state_dir"], "applimiter.pid")
         self.running = True
+        self._last_tick = time.monotonic()
+        self._lock_fd: Optional[int] = None
 
         logging.basicConfig(
             filename=os.path.join(self.cfg["state_dir"], "applimiter.log"),
@@ -29,14 +32,13 @@ class Daemon:
     def run(self) -> None:
         signal.signal(signal.SIGTERM, self._stop)
         signal.signal(signal.SIGINT, self._stop)
-
-        self._write_pid_file()
-        log.info("applimiter daemon started (poll_interval=%ss)", self.poll_interval)
-
         try:
+            self._write_pid_file()
+            log.info("applimiter daemon started (poll_interval=%ss)", self.poll_interval)
             self._loop()
         finally:
             self._remove_pid_file()
+            self.store.close()
             log.info("applimiter daemon stopped")
 
     def _stop(self, *_signal_args) -> None:
@@ -48,31 +50,54 @@ class Daemon:
                 self._tick()
             except Exception:
                 log.exception("error during tick")
-            time.sleep(self.poll_interval)
+            if self.running:
+                time.sleep(self.poll_interval)
 
     def _write_pid_file(self) -> None:
-        with open(self.pid_file, "w") as f:
-            f.write(str(os.getpid()))
+        # Lock the actual PID-file descriptor to reject overlapping invocations.
+        # Reading a PID and checking /proc is not atomic.
+        fd = os.open(self.pid_file, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(fd)
+            raise RuntimeError("applimiter daemon is already running")
+        self._lock_fd = fd
+        os.ftruncate(fd, 0)
+        os.write(fd, str(os.getpid()).encode())
 
     def _remove_pid_file(self) -> None:
-        if os.path.exists(self.pid_file):
-            os.remove(self.pid_file)
+        if self._lock_fd is None:
+            return
+        try:
+            os.unlink(self.pid_file)
+        except FileNotFoundError:
+            pass
+        finally:
+            os.close(self._lock_fd)
+            self._lock_fd = None
 
     def _tick(self) -> None:
+        now = time.monotonic()
+        # Do not charge time before the first observation, nor charge an entire
+        # laptop-suspend interval. Actual elapsed time is used within each poll.
+        elapsed = max(0, min(self.poll_interval, int(now - self._last_tick)))
+        self._last_tick = now
         sample = tracker.build_sample()
 
         for rule in self.cfg["rules"]:
             if matchers.matches(rule, sample):
-                self._process_matched_rule(rule)
+                self._process_matched_rule(rule, sample, elapsed)
 
         policy.apply_productivity_nudges(self.cfg["productivity_nudges"], self.store)
 
-    def _process_matched_rule(self, rule: Rule) -> None:
-        if policy.apply_time_lock(rule, self.store):
-            return  # blocked outright; don't count it as usage
+    def _process_matched_rule(self, rule: Rule, sample: matchers.Sample, elapsed: int) -> None:
+        if policy.apply_time_lock(rule, self.store, sample):
+            return
 
-        self.store.add_seconds(rule["name"], rule["category"], self.poll_interval)
-        policy.apply_usage_limit(rule, self.store)
+        if elapsed:
+            self.store.add_seconds(rule["name"], rule["category"], elapsed)
+        policy.apply_usage_limit(rule, self.store, sample)
 
 
 def main() -> None:
