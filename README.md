@@ -58,6 +58,22 @@ The user service reads `~/.config/applimiter/config.yaml`; edit it and run `appl
 
 See [config.example.yaml](config.example.yaml) for rule syntax.
 
+## CI
+
+```text
++-----------+  triggers  +----------+  runs  +------+
+| push / PR | ---------> | test.yml | -----> | test |
++-----------+            +----------+        +------+
+                             |        |
+                          runs        runs
+                             v        v
+                      +-------------+ +---------+
+                      | desktop-e2e | | package |
+                      +-------------+ +---------+
+```
+
+The `test` job runs on Python 3.10, 3.12 and 3.13.
+
 ## Limits
 
 - X11 only; Wayland is unsupported.
