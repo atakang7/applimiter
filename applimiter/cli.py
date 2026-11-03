@@ -1,7 +1,6 @@
 import argparse
 import os
 import shutil
-import shlex
 import subprocess
 import sys
 
@@ -27,10 +26,7 @@ def bar(seconds: int, max_seconds: int, width: int = 24) -> str:
 def cmd_stats(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
     store = Storage(cfg["state_dir"])
-    try:
-        rows = store.get_all_usage(args.date)
-    finally:
-        store.close()
+    rows = store.get_all_usage(args.date)
 
     if not rows:
         print(f"No usage recorded for {args.date or store.today()}.")
@@ -124,7 +120,7 @@ def cmd_logs(args: argparse.Namespace) -> None:
         tail_args.append("-f")
     tail_args += ["-n", str(args.lines), log_file]
 
-    subprocess.run(tail_args, check=True)
+    subprocess.run(tail_args)
 
 
 def cmd_config_validate(args: argparse.Namespace) -> None:
@@ -150,8 +146,7 @@ def cmd_config_edit(args: argparse.Namespace) -> None:
         print("no editor found — set $EDITOR or install nano/vi", file=sys.stderr)
         sys.exit(1)
 
-    command = shlex.split(editor) if os.environ.get("EDITOR") else [editor]
-    subprocess.run([*command, path], check=True)
+    subprocess.run([editor, path])
 
     try:
         load_config(path)
@@ -217,9 +212,6 @@ def main() -> None:
     except service.SystemctlError as e:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        print(f"error: command exited with status {e.returncode}", file=sys.stderr)
-        sys.exit(e.returncode or 1)
 
 
 if __name__ == "__main__":
