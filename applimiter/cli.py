@@ -1,10 +1,10 @@
 import argparse
-import shlex
-from contextlib import closing
 import os
+import shlex
 import shutil
 import subprocess
 import sys
+from contextlib import closing
 
 from . import service
 from .config import ConfigError, load_config
@@ -122,7 +122,14 @@ def cmd_logs(args: argparse.Namespace) -> None:
         tail_args.append("-f")
     tail_args += ["-n", str(args.lines), log_file]
 
-    subprocess.run(tail_args)
+    try:
+        result = subprocess.run(tail_args, check=False, timeout=None if args.follow else 15)
+    except subprocess.TimeoutExpired:
+        print("error: tail timed out", file=sys.stderr)
+        sys.exit(1)
+    if result.returncode != 0:
+        print(f"error: tail exited with status {result.returncode}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_config_validate(args: argparse.Namespace) -> None:
