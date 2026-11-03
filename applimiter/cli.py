@@ -1,4 +1,6 @@
 import argparse
+import shlex
+from contextlib import closing
 import os
 import shutil
 import subprocess
@@ -25,38 +27,38 @@ def bar(seconds: int, max_seconds: int, width: int = 24) -> str:
 
 def cmd_stats(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
-    store = Storage(cfg["state_dir"])
-    rows = store.get_all_usage(args.date)
+    with closing(Storage(cfg["state_dir"])) as store:
+        rows = store.get_all_usage(args.date)
 
-    if not rows:
-        print(f"No usage recorded for {args.date or store.today()}.")
-        return
+        if not rows:
+            print(f"No usage recorded for {args.date or store.today()}.")
+            return
 
-    rules_by_name: dict = {r["name"]: r for r in cfg["rules"]}
-    max_seconds = max(r[2] for r in rows)
+        rules_by_name: dict = {r["name"]: r for r in cfg["rules"]}
+        max_seconds = max(r[2] for r in rows)
 
-    fun_total = sum(r[2] for r in rows if r[1] == "fun")
-    productive_total = sum(r[2] for r in rows if r[1] == "productive")
+        fun_total = sum(r[2] for r in rows if r[1] == "fun")
+        productive_total = sum(r[2] for r in rows if r[1] == "productive")
 
-    print(f"applimiter — usage for {args.date or store.today()}\n")
-    for rule_name, category, seconds in rows:
-        rule = rules_by_name.get(rule_name, {})
-        limit = rule.get("daily_limit_minutes")
-        limit_str = f" / {limit}m limit" if limit else ""
-        print(f"  {rule_name:<16} [{category:<10}] {fmt_minutes(seconds):>8}{limit_str}  {bar(seconds, max_seconds)}")
+        print(f"applimiter — usage for {args.date or store.today()}\n")
+        for rule_name, category, seconds in rows:
+            rule = rules_by_name.get(rule_name, {})
+            limit = rule.get("daily_limit_minutes")
+            limit_str = f" / {limit}m limit" if limit else ""
+            print(f"  {rule_name:<16} [{category:<10}] {fmt_minutes(seconds):>8}{limit_str}  {bar(seconds, max_seconds)}")
 
-    print()
-    print(f"  Fun time:        {fmt_minutes(fun_total)}")
-    print(f"  Productive time: {fmt_minutes(productive_total)}")
+        print()
+        print(f"  Fun time:        {fmt_minutes(fun_total)}")
+        print(f"  Productive time: {fmt_minutes(productive_total)}")
 
-    if fun_total or productive_total:
-        total = fun_total + productive_total
-        fun_pct = round(100 * fun_total / total) if total else 0
-        print(f"  Fun share:       {fun_pct}%")
-        if fun_pct >= 50:
-            print("\n  Your fun apps are outpacing your productive ones today — maybe wrap up and get to work.")
-        elif fun_total // 60 >= 30:
-            print(f"\n  {fun_total // 60}m of fun so far today. Good moment for a check-in.")
+        if fun_total or productive_total:
+            total = fun_total + productive_total
+            fun_pct = round(100 * fun_total / total) if total else 0
+            print(f"  Fun share:       {fun_pct}%")
+            if fun_pct >= 50:
+                print("\n  Your fun apps are outpacing your productive ones today — maybe wrap up and get to work.")
+            elif fun_total // 60 >= 30:
+                print(f"\n  {fun_total // 60}m of fun so far today. Good moment for a check-in.")
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -146,7 +148,19 @@ def cmd_config_edit(args: argparse.Namespace) -> None:
         print("no editor found — set $EDITOR or install nano/vi", file=sys.stderr)
         sys.exit(1)
 
-    subprocess.run([editor, path])
+    try:
+        command = shlex.split(editor)
+    except ValueError as exc:
+        print(f"invalid $EDITOR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if not command:
+        print("invalid $EDITOR: empty command", file=sys.stderr)
+        sys.exit(1)
+
+    result = subprocess.run([*command, path], check=False)
+    if result.returncode != 0:
+        print(f"editor exited with status {result.returncode}", file=sys.stderr)
+        sys.exit(1)
 
     try:
         load_config(path)
