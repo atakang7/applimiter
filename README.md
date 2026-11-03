@@ -1,85 +1,84 @@
 # applimiter
 
-Tracks focused-window time on Linux X11, stores daily usage in SQLite, and applies configured limits.
+Local Linux **X11** foreground-usage tracker with per-application and per-tab time limits. Usage stays in SQLite on your machine; no account or telemetry service.
 
-```text
-+---------+  Sample  +--------+  rule + sample  +--------+  block  +---------+
-| tracker | -------> | daemon | --------------> | policy | ------> | actions |
-+---------+          +--------+                 +--------+         +---------+
-                        |
-                      writes
-                        v
-                    +---------+
-                    | Storage |
-                    +---------+
-```
+## Requirements
 
-## Run
-
-Ubuntu 24.04 with X11 and user systemd:
+- Linux desktop running X11, not Wayland
+- Python 3.10+, a user systemd instance
+- `xdotool`, `xprop` (`x11-utils`), and optionally `notify-send` (`libnotify-bin`)
+- Native-app windows must expose `_NET_WM_PID` so the daemon can identify the **specific focused process**
 
 ```sh
-sudo apt-get update
-sudo apt-get install -y python3.12-venv xdotool x11-utils libnotify-bin
-git clone https://github.com/atakang7/applimiter.git
-cd applimiter
-python3.12 -m venv ~/.local/share/applimiter/venv
-source ~/.local/share/applimiter/venv/bin/activate
-python -m pip install .
+sudo apt install xdotool x11-utils libnotify-bin
+python3 -m venv ~/.local/share/applimiter/venv
+~/.local/share/applimiter/venv/bin/pip install .
 mkdir -p ~/.config/applimiter
 cp config.example.yaml ~/.config/applimiter/config.yaml
-applimiter config edit
-applimiter config validate
-applimiter enable
-applimiter status
-applimiter stats
+~/.local/share/applimiter/venv/bin/applimiter config validate
+~/.local/share/applimiter/venv/bin/applimiter enable
 ```
 
-Review the example before enabling: some rules use hard enforcement.
+`enable` writes a **user** systemd unit using the current Python executable; it doesn't need root. Run it from the environment you want the daemon to use. Edit `~/.config/applimiter/config.yaml` to set your own rules.
 
-## Config
-
-The user service reads `~/.config/applimiter/config.yaml`; edit it and run `applimiter restart` to reload.
-
-| var | default | what |
-| --- | --- | --- |
-| `poll_interval` | `5` | Seconds between samples |
-| `state_dir` | `~/.local/share/applimiter` | SQLite, log and PID files |
-| `rules` | required | List of matching rules |
-| `rules[].name` | required | Unique rule name |
-| `rules[].type` | required | `process` or `chrome_title` |
-| `rules[].match` | required | Process name or window-title text |
-| `rules[].category` | `uncategorized` | Usage category |
-| `rules[].daily_limit_minutes` | unset | Daily limit; unset means track only |
-| `rules[].enforcement` | `soft` | `hard` enforces the limit |
-| `rules[].warn_at_minutes` | `[]` | Notification thresholds |
-| `rules[].blocked_before` | unset | Hard block before local `HH:MM` |
-| `productivity_nudges` | `[]` | Fun-time notification thresholds |
-
-See [config.example.yaml](config.example.yaml) for rule syntax.
-
-## CI
+## Usage
 
 ```text
-+-----------+  triggers  +----------+  runs  +------+
-| push / PR | ---------> | test.yml | -----> | test |
-+-----------+            +----------+        +------+
-                             |        |
-                          runs        runs
-                             v        v
-                      +-------------+ +---------+
-                      | desktop-e2e | | package |
-                      +-------------+ +---------+
+applimiter stats                  Current day: per-rule and fun/productive totals
+applimiter stats --date 2026-10-09
+applimiter status                 Service and daemon state
+applimiter start|stop|restart
+applimiter enable|disable         Install/enable or disable user systemd unit
+applimiter config validate|edit
+applimiter logs -n 100 [-f]
 ```
 
-The `test` job runs on Python 3.10, 3.12 and 3.13.
+For another config file, pass `--config PATH` **before** the command. The user service always reads the default config path.
 
-## Limits
+## Rules
 
-- X11 only; Wayland is unsupported.
-- Native process tracking requires a focused window with `_NET_WM_PID`.
-- Chrome rules match window titles, not URLs.
-- Usage is sampled, not timed continuously.
-- Hard enforcement sends SIGTERM or Ctrl+W and can lose unsaved work.
+```yaml
+poll_interval: 5
+rules:
+  - name: youtube
+    type: chrome_title
+    match: ["youtube"]
+    category: fun
+    daily_limit_minutes: 30
+    enforcement: soft
+    warn_at_minutes: [20, 27]
 
-MIT: [LICENSE](LICENSE).
+  - name: steam
+    type: process
+    match: steam
+    category: fun
+    daily_limit_minutes: 60
+    enforcement: soft
+    blocked_before: "09:00"
+
+  - name: editor
+    type: process
+    match: code
+    category: productive
+```
+
+- `process`: exact **focused window owner** process name, not every running process.
+- `chrome_title`: substring in the active Chrome/Chromium window title. It cannot verify URLs; false-positive titles are possible. The active tab only is tracked.
+- `soft`: warn without enforcing the daily limit. `hard`: send `SIGTERM` to **only the verified focused process** or `Ctrl+W` to the verified Chrome tab. **Unsaved work can be lost.**
+- `blocked_before`: unconditional hard block before the local cutoff even if `enforcement: soft`. Avoid combining it with important native applications.
+- Tracking counts elapsed foreground polling time; suspended/offline intervals are not counted. Sampling is approximate, not an exact stopwatch.
+
+Other examples and productivity nudges: [config.example.yaml](config.example.yaml).
+
+## Runtime and verification
+
+State defaults to `~/.local/share/applimiter`: `usage.db`, `applimiter.log`, and a singleton `applimiter.pid`. Records and one-time warnings reset by local calendar date. You can inspect them using `applimiter stats`.
+
+```sh
+python -m pip install -e ".[dev]"
+python -m pytest -q tests --ignore=tests/test_x11_e2e.py
+```
+
+CI also runs an **actual X11/Xvfb** test with two same-name xterm windows, asserting a focus change prevents termination and only the targeted window exits. A clean wheel-install smoke test checks the packaged entrypoint. On Wayland, without an X11 active window, enforcement deliberately fails closed rather than guessing a process to kill.
+
+MIT — [LICENSE](LICENSE).
