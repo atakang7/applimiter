@@ -1,41 +1,36 @@
 # applimiter
 
-Local Linux **X11** foreground-usage tracker with per-application and per-tab time limits. Usage stays in SQLite on your machine; no account or telemetry service.
+applimiter tracks time spent in the focused window on a Linux X11 desktop. It stores daily usage in a local SQLite database and can send alerts or enforce time limits.
 
-## Requirements
+## Quick start
 
-- Linux desktop running X11, not Wayland
-- Python 3.10+, a user systemd instance
-- `xdotool`, `xprop` (`x11-utils`), and optionally `notify-send` (`libnotify-bin`)
-- Native-app windows must expose `_NET_WM_PID` so the daemon can identify the **specific focused process**
+On Ubuntu 24.04 with an X11 session and a user systemd instance:
 
 ```sh
-sudo apt install xdotool x11-utils libnotify-bin
-python3 -m venv ~/.local/share/applimiter/venv
-~/.local/share/applimiter/venv/bin/pip install .
+sudo apt-get update
+sudo apt-get install -y python3.12-venv xdotool x11-utils libnotify-bin
+git clone https://github.com/atakang7/applimiter.git
+cd applimiter
+python3.12 -m venv ~/.local/share/applimiter/venv
+source ~/.local/share/applimiter/venv/bin/activate
+python -m pip install .
 mkdir -p ~/.config/applimiter
 cp config.example.yaml ~/.config/applimiter/config.yaml
-~/.local/share/applimiter/venv/bin/applimiter config validate
-~/.local/share/applimiter/venv/bin/applimiter enable
+applimiter config edit
+applimiter config validate
+applimiter enable
+applimiter status
 ```
 
-`enable` writes a **user** systemd unit using the current Python executable; it doesn't need root. Run it from the environment you want the daemon to use. Edit `~/.config/applimiter/config.yaml` to set your own rules.
+Edit the example rules before enabling the service. Some of them use hard enforcement, which can close apps or tabs with unsaved work. You can use `enforcement: soft` for alerts only.
 
-## Usage
+Python 3.10 or newer is supported; `.python-version` selects 3.12 for local development. `notify-send` is optional, but `xdotool` and `xprop` are needed to inspect X11 windows.
 
-```text
-applimiter stats                  Current day: per-rule and fun/productive totals
-applimiter stats --date 2026-10-09
-applimiter status                 Service and daemon state
-applimiter start|stop|restart
-applimiter enable|disable         Install/enable or disable user systemd unit
-applimiter config validate|edit
-applimiter logs -n 100 [-f]
-```
+## Configuration
 
-For another config file, pass `--config PATH` **before** the command. The user service always reads the default config path.
+The service reads `~/.config/applimiter/config.yaml`. Use `applimiter config edit` to change it, then `applimiter restart` to reload. Passing `--config PATH` before a CLI command only affects that command, not the installed service.
 
-## Rules
+A rule looks like this:
 
 ```yaml
 poll_interval: 5
@@ -47,38 +42,43 @@ rules:
     daily_limit_minutes: 30
     enforcement: soft
     warn_at_minutes: [20, 27]
-
-  - name: steam
-    type: process
-    match: steam
-    category: fun
-    daily_limit_minutes: 60
-    enforcement: soft
-    blocked_before: "09:00"
-
-  - name: editor
-    type: process
-    match: code
-    category: productive
 ```
 
-- `process`: exact **focused window owner** process name, not every running process.
-- `chrome_title`: substring in the active Chrome/Chromium window title. It cannot verify URLs; false-positive titles are possible. The active tab only is tracked.
-- `soft`: warn without enforcing the daily limit. `hard`: send `SIGTERM` to **only the verified focused process** or `Ctrl+W` to the verified Chrome tab. **Unsaved work can be lost.**
-- `blocked_before`: unconditional hard block before the local cutoff even if `enforcement: soft`. Avoid combining it with important native applications.
-- Tracking counts elapsed foreground polling time; suspended/offline intervals are not counted. Sampling is approximate, not an exact stopwatch.
+Use `type: process` with an exact executable name (for example, `code`) to track a native app. `chrome_title` matches text in the focused Chrome or Chromium window title, not a website address. `blocked_before: "09:00"` always blocks before that local time, even on a soft rule.
 
-Other examples and productivity nudges: [config.example.yaml](config.example.yaml).
+The full example covers process tracking, browser titles and daily notifications: [config.example.yaml](config.example.yaml).
 
-## Runtime and verification
+## How it works
 
-State defaults to `~/.local/share/applimiter`: `usage.db`, `applimiter.log`, and a singleton `applimiter.pid`. Records and one-time warnings reset by local calendar date. You can inspect them using `applimiter stats`.
+Every five seconds by default, `xdotool` finds the active X11 window and `xprop` reads its window class and owner PID. The daemon checks the process identity, records elapsed foreground time in SQLite, and applies matching rules. Hard enforcement sends SIGTERM to the verified focused process or Ctrl+W to the verified browser window.
+
+State is kept under `~/.local/share/applimiter/` by default: `usage.db`, `applimiter.log` and `applimiter.pid`. Usage and one-time warnings are grouped by local calendar date.
+
+## Usage and service
+
+```sh
+applimiter stats
+applimiter stats --date 2026-10-09
+applimiter status
+applimiter logs -n 100
+applimiter logs -f
+applimiter restart
+applimiter disable
+```
+
+`applimiter enable` installs and starts a user systemd service using the Python environment that runs the command. No root service is installed. `start`, `stop` and `restart` control that user service.
+
+## Tests
 
 ```sh
 python -m pip install -e ".[dev]"
 python -m pytest -q tests --ignore=tests/test_x11_e2e.py
 ```
 
-CI also runs an **actual X11/Xvfb** test with two same-name xterm windows, asserting a focus change prevents termination and only the targeted window exits. A clean wheel-install smoke test checks the packaged entrypoint. On Wayland, without an X11 active window, enforcement deliberately fails closed rather than guessing a process to kill.
+GitHub Actions also runs the X11 test under Xvfb and checks a clean wheel installation.
 
-MIT — [LICENSE](LICENSE).
+## Limitations
+
+Wayland is not supported. Native windows without `_NET_WM_PID` are skipped rather than matched to an unrelated process. Browser title matching can misidentify a tab, and usage is sampled rather than timed continuously. Hard enforcement can discard unsaved work; start with soft rules.
+
+MIT license: [LICENSE](LICENSE).

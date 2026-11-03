@@ -1,18 +1,14 @@
-# applimiter configuration
-# poll_interval: how often (seconds) the daemon samples what's active
+# Copy to ~/.config/applimiter/config.yaml and edit before enabling.
 poll_interval: 5
-
-# Where the daemon writes logs/db/pid — usually leave as-is
 state_dir: ~/.local/share/applimiter
 
 rules:
-  # --- Native applications, matched by process name (see `ps -eo comm`) ---
   - name: steam
     type: process
     match: steam
     category: fun
     daily_limit_minutes: 60
-    enforcement: hard        # hard = kill the process once limit is hit
+    enforcement: hard
     warn_at_minutes: [45, 55]
 
   - name: discord
@@ -20,10 +16,10 @@ rules:
     match: Discord
     category: fun
     daily_limit_minutes: 90
-    enforcement: soft         # soft = notify only, never kill
+    enforcement: soft
     warn_at_minutes: [60, 80]
 
-  # --- Websites, matched by keyword(s) found in the Chrome window title ---
+  # Browser rules match window titles, not URLs.
   - name: youtube
     type: chrome_title
     match: ["youtube"]
@@ -38,8 +34,6 @@ rules:
     warn_at_minutes: [15]
 
   - name: x-twitter
-    # X.com's tab title is often just "Home / X" (no "x.com"/"twitter" text),
-    # so match on both the brand name and the "/ x" suffix pattern.
     type: chrome_title
     match: ["twitter", "x.com", " / x"]
     category: fun
@@ -51,8 +45,6 @@ rules:
     type: chrome_title
     match: ["kick.com", "kick -"]
     category: fun
-    # Always blocked (tab auto-closed) until this time of day, every day —
-    # independent of daily_limit_minutes, which this rule doesn't use.
     blocked_before: "17:00"
 
   - name: linkedin
@@ -63,7 +55,6 @@ rules:
     enforcement: hard
     warn_at_minutes: [7, 9]
 
-  # --- Productive apps (no limit needed, just tracked for the daily report) ---
   - name: chatgpt
     type: chrome_title
     match: ["chatgpt"]
@@ -89,8 +80,6 @@ rules:
     match: gnome-terminal-server
     category: productive
 
-# Daily productivity nudge: when total "fun" time crosses these
-# thresholds (minutes), send a notification with a stats summary.
 productivity_nudges:
   - minutes: 30
     message: "You've spent {fun_minutes}m on fun stuff today. Maybe it's time to start working?"
