@@ -10,11 +10,11 @@ def send(title: str, body: str, urgency: str = "normal") -> None:
     try:
         subprocess.run(
             ["notify-send", "-u", urgency, "-a", "applimiter", title, body],
-            check=False,
+            check=True,
             timeout=3,
         )
-    except FileNotFoundError:
-        log.warning("notify-send not found; skipping notification: %s - %s", title, body)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        log.warning("notification failed: %s", exc)
 
 
 def warn_threshold(rule: Rule, minutes_used: int, minutes_limit: int) -> None:

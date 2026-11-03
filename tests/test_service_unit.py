@@ -19,3 +19,16 @@ def test_installed_user_unit_uses_active_interpreter(tmp_path, monkeypatch):
     assert "Restart=on-failure" in unit
     systemctl.assert_any_call("daemon-reload")
     systemctl.assert_any_call("enable", "--now", service.SERVICE_NAME)
+
+def test_systemctl_timeout_is_reported(monkeypatch):
+    import subprocess
+
+    def timeout(*args, **kwargs):
+        assert kwargs["timeout"] == 15
+        raise subprocess.TimeoutExpired(args[0], 15)
+
+    monkeypatch.setattr(service.subprocess, "run", timeout)
+
+    import pytest
+    with pytest.raises(service.SystemctlError, match="timed out after 15s"):
+        service._systemctl("start", service.SERVICE_NAME)
