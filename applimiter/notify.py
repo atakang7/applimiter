@@ -8,13 +8,20 @@ log = logging.getLogger("applimiter")
 
 def send(title: str, body: str, urgency: str = "normal") -> None:
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["notify-send", "-u", urgency, "-a", "applimiter", title, body],
             check=False,
             timeout=3,
         )
     except FileNotFoundError:
         log.warning("notify-send not found; skipping notification: %s - %s", title, body)
+    except subprocess.TimeoutExpired:
+        log.warning("notification timed out: %s", title)
+    except OSError as exc:
+        log.warning("notification failed for %s: %s", title, exc)
+    else:
+        if result.returncode != 0:
+            log.warning("notify-send exited with status %s: %s", result.returncode, title)
 
 
 def warn_threshold(rule: Rule, minutes_used: int, minutes_limit: int) -> None:

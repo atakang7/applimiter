@@ -18,11 +18,16 @@ def _systemctl(*args: str, check: bool = True, capture: bool = False) -> subproc
             check=check,
             capture_output=capture,
             text=True,
+            timeout=15,
         )
-    except FileNotFoundError:
-        raise SystemctlError("systemctl not found — applimiter's daemon lifecycle commands require systemd.")
-    except subprocess.CalledProcessError as e:
-        raise SystemctlError(f"systemctl {' '.join(args)} failed: {e.stderr or e}")
+    except FileNotFoundError as exc:
+        raise SystemctlError("systemctl not found; applimiter requires a user systemd instance") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SystemctlError(f"systemctl {' '.join(args)} timed out after {exc.timeout}s") from exc
+    except subprocess.CalledProcessError as exc:
+        raise SystemctlError(f"systemctl {' '.join(args)} failed: {exc.stderr or exc}") from exc
+    except OSError as exc:
+        raise SystemctlError(f"unable to run systemctl: {exc}") from exc
 
 
 def is_installed() -> bool:
