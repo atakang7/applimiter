@@ -19,6 +19,13 @@ def window_by_title(title):
 
 def focus(window):
     subprocess.run(["xdotool", "windowactivate", "--sync", window], check=True, timeout=5)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        _wm_class, _title, _pid, active_window = tracker.get_active_window()
+        if active_window == str(int(window)):
+            return
+        time.sleep(0.05)
+    pytest.fail(f"window {window} did not become active")
 
 
 @pytest.mark.skipif(not os.environ.get('DISPLAY'), reason='requires real X11 session')
