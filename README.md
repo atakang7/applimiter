@@ -1,10 +1,22 @@
 # applimiter
 
-applimiter tracks time spent in the focused window on a Linux X11 desktop. It stores daily usage in a local SQLite database and can send alerts or enforce time limits.
+Tracks focused-window time on Linux X11, stores daily usage in SQLite, and applies configured limits.
 
-## Quick start
+```text
++---------+  Sample  +--------+  rule + sample  +--------+  block  +---------+
+| tracker | -------> | daemon | --------------> | policy | ------> | actions |
++---------+          +--------+                 +--------+         +---------+
+                        |
+                      writes
+                        v
+                    +---------+
+                    | Storage |
+                    +---------+
+```
 
-On Ubuntu 24.04 with an X11 session and a user systemd instance:
+## Run
+
+Ubuntu 24.04 with X11 and user systemd:
 
 ```sh
 sudo apt-get update
@@ -20,65 +32,54 @@ applimiter config edit
 applimiter config validate
 applimiter enable
 applimiter status
-```
-
-Edit the example rules before enabling the service. Some of them use hard enforcement, which can close apps or tabs with unsaved work. You can use `enforcement: soft` for alerts only.
-
-Python 3.10 or newer is supported; `.python-version` selects 3.12 for local development. `notify-send` is optional, but `xdotool` and `xprop` are needed to inspect X11 windows.
-
-## Configuration
-
-The service reads `~/.config/applimiter/config.yaml`. Use `applimiter config edit` to change it, then `applimiter restart` to reload. Passing `--config PATH` before a CLI command only affects that command, not the installed service.
-
-A rule looks like this:
-
-```yaml
-poll_interval: 5
-rules:
-  - name: youtube
-    type: chrome_title
-    match: ["youtube"]
-    category: fun
-    daily_limit_minutes: 30
-    enforcement: soft
-    warn_at_minutes: [20, 27]
-```
-
-Use `type: process` with an exact executable name (for example, `code`) to track a native app. `chrome_title` matches text in the focused Chrome or Chromium window title, not a website address. `blocked_before: "09:00"` always blocks before that local time, even on a soft rule.
-
-The full example covers process tracking, browser titles and daily notifications: [config.example.yaml](config.example.yaml).
-
-## How it works
-
-Every five seconds by default, `xdotool` finds the active X11 window and `xprop` reads its window class and owner PID. The daemon checks the process identity, records elapsed foreground time in SQLite, and applies matching rules. Hard enforcement sends SIGTERM to the verified focused process or Ctrl+W to the verified browser window.
-
-State is kept under `~/.local/share/applimiter/` by default: `usage.db`, `applimiter.log` and `applimiter.pid`. Usage and one-time warnings are grouped by local calendar date.
-
-## Usage and service
-
-```sh
 applimiter stats
-applimiter stats --date 2026-10-09
-applimiter status
-applimiter logs -n 100
-applimiter logs -f
-applimiter restart
-applimiter disable
 ```
 
-`applimiter enable` installs and starts a user systemd service using the Python environment that runs the command. No root service is installed. `start`, `stop` and `restart` control that user service.
+Review the example before enabling: some rules use hard enforcement.
 
-## Tests
+## Config
 
-```sh
-python -m pip install -e ".[dev]"
-python -m pytest -q tests --ignore=tests/test_x11_e2e.py
+The user service reads `~/.config/applimiter/config.yaml`; edit it and run `applimiter restart` to reload.
+
+| var | default | what |
+| --- | --- | --- |
+| `poll_interval` | `5` | Seconds between samples |
+| `state_dir` | `~/.local/share/applimiter` | SQLite, log and PID files |
+| `rules` | required | List of matching rules |
+| `rules[].name` | required | Unique rule name |
+| `rules[].type` | required | `process` or `chrome_title` |
+| `rules[].match` | required | Process name or window-title text |
+| `rules[].category` | `uncategorized` | Usage category |
+| `rules[].daily_limit_minutes` | unset | Daily limit; unset means track only |
+| `rules[].enforcement` | `soft` | `hard` enforces the limit |
+| `rules[].warn_at_minutes` | `[]` | Notification thresholds |
+| `rules[].blocked_before` | unset | Hard block before local `HH:MM` |
+| `productivity_nudges` | `[]` | Fun-time notification thresholds |
+
+See [config.example.yaml](config.example.yaml) for rule syntax.
+
+## CI
+
+```text
++-----------+  triggers  +----------+  runs  +------+
+| push / PR | ---------> | test.yml | -----> | test |
++-----------+            +----------+        +------+
+                             |        |
+                          runs        runs
+                             v        v
+                      +-------------+ +---------+
+                      | desktop-e2e | | package |
+                      +-------------+ +---------+
 ```
 
-GitHub Actions also runs the X11 test under Xvfb and checks a clean wheel installation.
+The `test` job runs on Python 3.10, 3.12 and 3.13.
 
-## Limitations
+## Limits
 
-Wayland is not supported. Native windows without `_NET_WM_PID` are skipped rather than matched to an unrelated process. Browser title matching can misidentify a tab, and usage is sampled rather than timed continuously. Hard enforcement can discard unsaved work; start with soft rules.
+- X11 only; Wayland is unsupported.
+- Native process tracking requires a focused window with `_NET_WM_PID`.
+- Chrome rules match window titles, not URLs.
+- Usage is sampled, not timed continuously.
+- Hard enforcement sends SIGTERM or Ctrl+W and can lose unsaved work.
 
-MIT license: [LICENSE](LICENSE).
+MIT: [LICENSE](LICENSE).
