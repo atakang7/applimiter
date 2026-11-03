@@ -112,3 +112,19 @@ def test_productivity_nudge_fires_once_per_threshold(store, recorder):
     policy.apply_productivity_nudges(nudges, store)
     policy.apply_productivity_nudges(nudges, store)
     assert recorder["notifications"].count("applimiter: productivity check-in") == 1
+
+def test_notification_timeout_does_not_prevent_time_lock(store, monkeypatch):
+    import subprocess
+
+    from applimiter import notify
+
+    def fail(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    blocks = []
+    monkeypatch.setattr(notify.subprocess, "run", fail)
+    monkeypatch.setattr(policy, "is_time_locked", lambda rule, now=None: True)
+    monkeypatch.setattr(policy.actions, "block", lambda rule, sample=None: blocks.append(rule["name"]))
+
+    assert policy.apply_time_lock(soft_rule(name="kick", blocked_before="17:00"), store)
+    assert blocks == ["kick"]
